@@ -37,48 +37,63 @@ class ProspectUpdate(BaseModel):
 @router.post("/import")
 async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(get_db)):
     """
-    Import en masse — évite les doublons par nom + ville.
-    Utilisé par le dashboard pour pousser les résultats Google Places.
+    Import en masse — évite les doublons par nom + adresse.
+    Résilient : une ligne défaillante (champ trop long, etc.) est ignorée
+    sans faire échouer tout le lot.
     """
     added = 0
     skipped = 0
+    errors = 0
 
     for p in data.prospects:
-        # Déduplication précise : nom + adresse (deux agences au même nom
-        # mais adresses différentes sont bien deux prospects distincts).
-        # Si pas d'adresse fournie, on retombe sur nom + ville.
-        query = select(Prospect).where(Prospect.name == p.name)
-        if p.address:
-            query = query.where(Prospect.address == p.address)
-        elif p.ville:
-            query = query.where(Prospect.ville == p.ville)
-        result = await db.execute(query)
-        existing = result.scalar_one_or_none()
+        try:
+            # Déduplication précise : nom + adresse (deux agences au même nom
+            # mais adresses différentes sont bien deux prospects distincts).
+            query = select(Prospect).where(Prospect.name == (p.name or "")[:500])
+            if p.address:
+                query = query.where(Prospect.address == p.address[:500])
+            elif p.ville:
+                query = query.where(Prospect.ville == p.ville[:150])
+            result = await db.execute(query)
+            existing = result.scalar_one_or_none()
 
-        if existing:
-            skipped += 1
+            if existing:
+                skipped += 1
+                continue
+
+            # Troncature défensive — évite tout dépassement de colonne,
+            # peu importe la longueur de la donnée source (ex: URL avec UTM).
+            prospect = Prospect(
+                name=(p.name or "")[:500],
+                address=(p.address or None) and p.address[:500],
+                contact=(p.contact or None) and p.contact[:150],
+                email=(p.email or None) and p.email[:255],
+                phone=(p.phone or None) and p.phone[:50],
+                ville=(p.ville or None) and p.ville[:150],
+                website=(p.website or None) and p.website[:1000],
+                rating=(p.rating or None) and str(p.rating)[:10],
+                place_id=(p.place_id or None) and p.place_id[:255],
+                source=p.source,
+                status="contacte",
+                seq="À envoyer",
+                ouvert=False,
+            )
+            db.add(prospect)
+            await db.flush()  # détecte une éventuelle erreur SQL ligne par ligne
+            added += 1
+        except Exception:
+            await db.rollback()
+            errors += 1
             continue
 
-        prospect = Prospect(
-            name=p.name,
-            address=p.address,
-            contact=p.contact,
-            email=p.email,
-            phone=p.phone,
-            ville=p.ville,
-            website=p.website,
-            rating=p.rating,
-            place_id=p.place_id,
-            source=p.source,
-            status="contacte",
-            seq="À envoyer",
-            ouvert=False,
-        )
-        db.add(prospect)
-        added += 1
-
     await db.commit()
-    return {"success": True, "added": added, "skipped": skipped, "total_submitted": len(data.prospects)}
+    return {
+        "success": True,
+        "added": added,
+        "skipped": skipped,
+        "errors": errors,
+        "total_submitted": len(data.prospects),
+    }
 
 
 @router.get("")
