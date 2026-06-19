@@ -10,6 +10,7 @@ router = APIRouter(prefix="/prospects", tags=["prospects"])
 
 class ProspectIn(BaseModel):
     name: str
+    address: str | None = None
     contact: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -43,9 +44,13 @@ async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(
     skipped = 0
 
     for p in data.prospects:
-        # Vérifie l'existence par nom (et ville si fournie)
+        # Déduplication précise : nom + adresse (deux agences au même nom
+        # mais adresses différentes sont bien deux prospects distincts).
+        # Si pas d'adresse fournie, on retombe sur nom + ville.
         query = select(Prospect).where(Prospect.name == p.name)
-        if p.ville:
+        if p.address:
+            query = query.where(Prospect.address == p.address)
+        elif p.ville:
             query = query.where(Prospect.ville == p.ville)
         result = await db.execute(query)
         existing = result.scalar_one_or_none()
@@ -56,6 +61,7 @@ async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(
 
         prospect = Prospect(
             name=p.name,
+            address=p.address,
             contact=p.contact,
             email=p.email,
             phone=p.phone,
@@ -101,6 +107,7 @@ async def list_prospects(
             {
                 "id": p.id,
                 "name": p.name,
+                "address": p.address,
                 "contact": p.contact,
                 "email": p.email,
                 "phone": p.phone,
