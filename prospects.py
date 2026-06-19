@@ -17,8 +17,42 @@ class ProspectIn(BaseModel):
     ville: str | None = None
     website: str | None = None
     rating: str | None = None
+    user_ratings_total: str | None = None
     place_id: str | None = None
     source: str | None = "import"
+
+
+def calculer_score(email, website, rating, user_ratings_total, phone) -> int:
+    """
+    Score de 0 à 100 pour prioriser les prospects les plus prometteurs.
+    Email (30) > Site web (20) > Note Google (20) > Volume d'avis (15) > Téléphone (15)
+    """
+    score = 0
+    if email:
+        score += 30
+    if website:
+        score += 20
+    try:
+        if rating and float(rating) >= 4.5:
+            score += 20
+        elif rating and float(rating) >= 4.0:
+            score += 12
+        elif rating and float(rating) >= 3.5:
+            score += 6
+    except (ValueError, TypeError):
+        pass
+    try:
+        if user_ratings_total and int(user_ratings_total) >= 50:
+            score += 15
+        elif user_ratings_total and int(user_ratings_total) >= 15:
+            score += 8
+        elif user_ratings_total and int(user_ratings_total) >= 1:
+            score += 3
+    except (ValueError, TypeError):
+        pass
+    if phone:
+        score += 15
+    return score
 
 
 class ProspectBulkImport(BaseModel):
@@ -63,6 +97,7 @@ async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(
 
             # Troncature défensive — évite tout dépassement de colonne,
             # peu importe la longueur de la donnée source (ex: URL avec UTM).
+            score = calculer_score(p.email, p.website, p.rating, p.user_ratings_total, p.phone)
             prospect = Prospect(
                 name=(p.name or "")[:500],
                 address=(p.address or None) and p.address[:500],
@@ -72,6 +107,8 @@ async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(
                 ville=(p.ville or None) and p.ville[:150],
                 website=(p.website or None) and p.website[:1000],
                 rating=(p.rating or None) and str(p.rating)[:10],
+                user_ratings_total=(p.user_ratings_total or None) and str(p.user_ratings_total)[:20],
+                score=score,
                 place_id=(p.place_id or None) and p.place_id[:255],
                 source=p.source,
                 status="contacte",
@@ -104,8 +141,8 @@ async def list_prospects(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
-    """Liste paginée des prospects, avec filtres optionnels."""
-    query = select(Prospect).order_by(Prospect.created_at.desc())
+    """Liste paginée des prospects, avec filtres optionnels. Triée par score décroissant."""
+    query = select(Prospect).order_by(Prospect.score.desc(), Prospect.created_at.desc())
 
     if status and status != "tous":
         query = query.where(Prospect.status == status)
@@ -129,6 +166,8 @@ async def list_prospects(
                 "ville": p.ville,
                 "website": p.website,
                 "rating": p.rating,
+                "user_ratings_total": p.user_ratings_total,
+                "score": p.score,
                 "status": p.status,
                 "seq": p.seq,
                 "ouvert": p.ouvert,
@@ -137,6 +176,25 @@ async def list_prospects(
             for p in prospects
         ]
     }
+
+
+@router.post("/recalculate-scores")
+async def recalculate_scores(db: AsyncSession = Depends(get_db)):
+    """
+    Recalcule le score de tous les prospects existants.
+    Utile après import en masse (les scores n'étaient pas encore calculés)
+    ou après mise à jour d'un email (ex: génération Hunter.io).
+    """
+    result = await db.execute(select(Prospect))
+    all_prospects = result.scalars().all()
+
+    updated = 0
+    for p in all_prospects:
+        p.score = calculer_score(p.email, p.website, p.rating, p.user_ratings_total, p.phone)
+        updated += 1
+
+    await db.commit()
+    return {"success": True, "updated": updated}
 
 
 @router.get("/count")
