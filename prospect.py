@@ -17,6 +17,8 @@ class Prospect(Base):
     ville: Mapped[str | None] = mapped_column(String(150))
     website: Mapped[str | None] = mapped_column(String(1000))
     rating: Mapped[str | None] = mapped_column(String(10))
+    user_ratings_total: Mapped[str | None] = mapped_column(String(20))
+    score: Mapped[int] = mapped_column(default=0)
     place_id: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(50), default="contacte")  # contacte | relance | rdv | signe
     seq: Mapped[str | None] = mapped_column(String(100), default="À envoyer")
