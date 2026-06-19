@@ -10,6 +10,7 @@ class Prospect(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), index=True)
+    address: Mapped[str | None] = mapped_column(String(500))
     contact: Mapped[str | None] = mapped_column(String(150))
     email: Mapped[str | None] = mapped_column(String(255), index=True)
     phone: Mapped[str | None] = mapped_column(String(50))
