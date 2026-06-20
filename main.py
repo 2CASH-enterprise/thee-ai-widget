@@ -7,6 +7,8 @@ from app.api.leads import router as leads_router
 from app.api.prospects import router as prospects_router
 from app.api.leads_pdf import router as leads_pdf_router
 from app.api.tracking import router as tracking_router
+from app.api.monitoring import router as monitoring_router
+from app.api.subscriptions import router as subscriptions_router
 from app.config import settings
 
 
@@ -35,6 +37,8 @@ app.include_router(leads_router)
 app.include_router(prospects_router)
 app.include_router(leads_pdf_router)
 app.include_router(tracking_router)
+app.include_router(monitoring_router)
+app.include_router(subscriptions_router)
 
 
 @app.get("/health")
