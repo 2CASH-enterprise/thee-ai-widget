@@ -58,6 +58,9 @@ async def generate_lead_summary(conversation_text: str) -> dict:
             "type_bien": None, "delai": None,
             "notes_libres": "Erreur lors de la génération du résumé.",
         }
+
+
+async def detect_intent(user_message: str) -> str:
     """
     Détecte l'intention de l'utilisateur avec un LLM léger.
     Retourne : achat | location | visite | question | contact
