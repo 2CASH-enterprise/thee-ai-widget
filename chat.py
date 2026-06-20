@@ -8,6 +8,7 @@ from app.models.lead import Lead
 from app.core.llm import chat_completion, detect_intent, generate_lead_summary
 from app.core.prompts import build_system_prompt, SAMPLE_LISTINGS
 from app.services.email import notify_agency_new_lead
+from app.core.error_logger import log_error
 from app.config import settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -28,6 +29,14 @@ class ChatResponse(BaseModel):
 
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        return await _handle_chat(req, db)
+    except Exception as e:
+        await log_error(db, source="chat", error=e, context={"session_id": req.session_id, "agency_id": req.agency_id})
+        raise HTTPException(status_code=500, detail="Une erreur est survenue, réessayez dans un instant.")
+
+
+async def _handle_chat(req: ChatRequest, db: AsyncSession) -> ChatResponse:
     # 1. Récupérer l'historique de la session (20 derniers messages)
     result = await db.execute(
         select(Message)
