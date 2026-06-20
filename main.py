@@ -6,6 +6,7 @@ from app.api.chat import router as chat_router
 from app.api.leads import router as leads_router
 from app.api.prospects import router as prospects_router
 from app.api.leads_pdf import router as leads_pdf_router
+from app.api.tracking import router as tracking_router
 from app.config import settings
 
 
@@ -33,6 +34,7 @@ app.include_router(chat_router)
 app.include_router(leads_router)
 app.include_router(prospects_router)
 app.include_router(leads_pdf_router)
+app.include_router(tracking_router)
 
 
 @app.get("/health")
