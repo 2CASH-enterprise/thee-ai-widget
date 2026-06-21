@@ -137,6 +137,7 @@ async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(
 async def list_prospects(
     status: str | None = None,
     search: str | None = None,
+    channel: str | None = None,  # "email" | "phone" | None (tous)
     limit: int = 200,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -149,6 +150,14 @@ async def list_prospects(
     if search:
         like = f"%{search}%"
         query = query.where((Prospect.name.ilike(like)) | (Prospect.ville.ilike(like)))
+
+    # Segmentation par canal de contact disponible
+    if channel == "email":
+        query = query.where(Prospect.email.isnot(None), Prospect.email != "")
+    elif channel == "phone":
+        query = query.where(
+            (Prospect.email.is_(None)) | (Prospect.email == "")
+        ).where(Prospect.phone.isnot(None), Prospect.phone != "")
 
     query = query.limit(limit).offset(offset)
     result = await db.execute(query)
@@ -175,6 +184,50 @@ async def list_prospects(
             }
             for p in prospects
         ]
+    }
+
+
+@router.get("/segments")
+async def get_segments(db: AsyncSession = Depends(get_db)):
+    """
+    Segmentation des prospects par canal de contact disponible.
+    - email : a un email exploitable → canal email (séquence Sarah AI)
+    - phone : pas d'email mais a un téléphone → canal téléphone/WhatsApp
+    - aucun : ni email ni téléphone → à enrichir manuellement
+    """
+    total_result = await db.execute(select(func.count(Prospect.id)))
+    total = total_result.scalar() or 0
+
+    email_result = await db.execute(
+        select(func.count(Prospect.id)).where(Prospect.email.isnot(None), Prospect.email != "")
+    )
+    avec_email = email_result.scalar() or 0
+
+    phone_only_result = await db.execute(
+        select(func.count(Prospect.id)).where(
+            (Prospect.email.is_(None)) | (Prospect.email == "")
+        ).where(Prospect.phone.isnot(None), Prospect.phone != "")
+    )
+    phone_seul = phone_only_result.scalar() or 0
+
+    aucun_result = await db.execute(
+        select(func.count(Prospect.id)).where(
+            (Prospect.email.is_(None)) | (Prospect.email == "")
+        ).where(
+            (Prospect.phone.is_(None)) | (Prospect.phone == "")
+        )
+    )
+    aucun_contact = aucun_result.scalar() or 0
+
+    # Emails vérifiés OK (basé sur le statut, si jamais on synchronise cette info plus tard)
+    return {
+        "total": total,
+        "canal_email": avec_email,
+        "canal_telephone": phone_seul,
+        "sans_contact": aucun_contact,
+        "pct_email": round(avec_email / total * 100, 1) if total else 0,
+        "pct_telephone": round(phone_seul / total * 100, 1) if total else 0,
+        "pct_sans_contact": round(aucun_contact / total * 100, 1) if total else 0,
     }
 
 
