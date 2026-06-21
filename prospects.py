@@ -92,6 +92,26 @@ async def import_prospects(data: ProspectBulkImport, db: AsyncSession = Depends(
             existing = result.scalar_one_or_none()
 
             if existing:
+                # Au lieu d'ignorer purement, on complète les champs manquants
+                # (téléphone notamment, récupéré après coup via enrichissement)
+                updated_fields = False
+                if p.phone and not existing.phone:
+                    existing.phone = p.phone[:50]
+                    updated_fields = True
+                if p.email and not existing.email:
+                    existing.email = p.email[:255]
+                    updated_fields = True
+                if p.website and not existing.website:
+                    existing.website = p.website[:1000]
+                    updated_fields = True
+
+                if updated_fields:
+                    # Recalcule le score puisque de nouvelles infos sont disponibles
+                    existing.score = calculer_score(
+                        existing.email, existing.website, existing.rating,
+                        existing.user_ratings_total, existing.phone
+                    )
+
                 skipped += 1
                 continue
 
