@@ -64,6 +64,10 @@ class ProspectUpdate(BaseModel):
     seq: str | None = None
     ouvert: bool | None = None
     email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    ville: str | None = None
+    website: str | None = None
     contact: str | None = None
     notes: str | None = None
 
@@ -289,7 +293,7 @@ async def count_prospects(db: AsyncSession = Depends(get_db)):
 
 @router.patch("/{prospect_id}")
 async def update_prospect(prospect_id: str, data: ProspectUpdate, db: AsyncSession = Depends(get_db)):
-    """Met à jour le statut/email/etc d'un prospect."""
+    """Met à jour les informations d'un prospect (correction manuelle depuis le dashboard)."""
     result = await db.execute(select(Prospect).where(Prospect.id == prospect_id))
     prospect = result.scalar_one_or_none()
     if not prospect:
@@ -297,6 +301,14 @@ async def update_prospect(prospect_id: str, data: ProspectUpdate, db: AsyncSessi
 
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(prospect, field, value)
+
+    # Recalcule le score si des champs de contact ont été modifiés,
+    # pour que la correction se reflète immédiatement dans le classement
+    # et la segmentation par canal.
+    prospect.score = calculer_score(
+        prospect.email, prospect.website, prospect.rating,
+        prospect.user_ratings_total, prospect.phone
+    )
 
     await db.commit()
     return {"success": True}
